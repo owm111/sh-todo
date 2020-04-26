@@ -1,0 +1,97 @@
+#!/bin/sh
+
+: "${TODO_DIR=$HOME/Documents/todo}"
+: "${TODO_FILE=$TODO_DIR/todo.txt}"
+: "${DONE_FILE=$TODO_DIR/done.txt}"
+VERSION_INFO="todo v0.0.0"
+HELP_TEXT="$VERSION_INFO
+
+Usage:
+  todo <command>
+
+Commands:
+  version        Display version information.
+  help           Display this help text.
+  ls,list [e]... List to do items, grepping by [e]s (if provided).
+  a,add <item>   Add <item> to list.
+  do,done <N>    Mark item #<N> as done.
+  rm,remove <N>  Delete item #<N> from list.
+  e,edit         Edit the file with $EDITOR.
+  archive        Move completed items from todo.txt to done.txt.
+
+Environment variables:
+  TODO_DIR=$TODO_DIR
+  TODO_FILE=$TODO_FILE
+  DONE_FILE=$DONE_FILE
+"
+
+todo_sort() {
+  awk '
+    {
+      done = $2 == "x" ? 1 : 0
+
+      match($2, /^\(([A-Z])\)$/, priarr)
+      pri = priarr[1] ? priarr[1] : "z"
+
+      match($0, / due:([0-9-]{10})/, duearr)
+      due = duearr[0] ? duearr[1] : "9999-99-99"
+
+      printf "%s %s %s %s\n", done, pri, due, $0 | "sort -k1n,1 -k2,2 -k3n,3 -k5n,5 | sed -E \"s/^([^ ]+ ){3}//\""
+    }
+  '
+}
+
+colorize() {
+  awk '
+    {
+      if ($2 == "x")
+        color = "90"
+      else if ($2 == "(A)")
+        color = "1;31"
+      else if ($2 == "(B)")
+        color = "1;34"
+      else if ($2 == "(C)")
+        color = "1;35"
+      else if ($2 == "(D)")
+        color = "1;36"
+      else if ($2 == "(E)")
+        color = "34"
+      else if ($2 == "(F)")
+        color = "35"
+      else if ($2 == "(G)")
+        color = "36"
+      else
+        color = ""
+      gsub(/\+[^ ]+/, "\033[3;32m&\033[0;" color "m")
+      gsub(/@[^ ]+/, "\033[3;33m&\033[0;" color "m")
+      gsub(/due:[^ ]+/, "\033[3;31m&\033[0;" color "m")
+      printf "\033[%sm%s\033[0m\n", color, $0
+    }
+  '
+}
+
+case "$1" in
+  -V|--version|version) printf '%s\n' "$VERSION_INFO" ;;
+  -h|--help|help)       printf '%s'   "$HELP_TEXT" ;;
+  ls|list)
+    shift
+    nl -ba -s' ' -w3 "$TODO_FILE" \
+      | eval "$(P=; for X in "${@-.}"; do printf '%s grep "%s"' "$P" "$X"; P="|"; done)" \
+      | todo_sort \
+      | colorize \
+      | awk -vn="$(wc -l "$TODO_FILE")" '{ print } END { printf "---------\nTODO: %d of %d shown\n", NR, n }'
+    ;;
+  a|add)
+    shift
+    printf '%s %s\n' "$(date -I)" "$@" >> "$TODO_FILE"
+    ;;
+  'do'|'done') sed -i "$2s/^\((.) \)\?/x $(date -I) /" "$TODO_FILE" ;;
+  rm|remove)   sed -i "$2d" "$TODO_FILE" ;;
+  e|edit)      $EDITOR "$TODO_FILE" ;;
+  ar|archive)  sed -n '/^x /p' "$TODO_FILE" | tee -a "$DONE_FILE" ;;
+  *)
+    # shellcheck disable=SC2016
+    printf 'Unknown action %s\nRun `todo help` for valid actions.\n' "$1" >&2
+    exit 1
+    ;;
+esac
