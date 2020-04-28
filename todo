@@ -88,7 +88,9 @@ case "$1" in
   'do'|'done') sed -i "$2s/^\((.) \)\?/x $(date -I) /" "$TODO_FILE" ;;
   rm|remove)   sed -i "$2d" "$TODO_FILE" ;;
   e|edit)      $EDITOR "$TODO_FILE" ;;
-  ar|archive)  sed -n '/^x /p' "$TODO_FILE" | tee -a "$DONE_FILE" ;;
+  ar|archive)
+    awk -vdone="$DONE_FILE" -vtodo="$TODO_FILE" '$1 == "x" { print >> done; next } { print > todo }' "$TODO_FILE"
+    ;;
   *)
     # shellcheck disable=SC2016
     printf 'Unknown action %s\nRun `todo help` for valid actions.\n' "$1" >&2
